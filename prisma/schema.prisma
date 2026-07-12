@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Auth & Users ────────────────────────────────────────────
+
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  name        String?
+  avatarUrl   String?  @map("avatar_url")
+  provider    String?  // google, microsoft
+  providerId  String?  @unique @map("provider_id")
+  credits     Int      @default(1000)
+  plan        String   @default("free") // free, creator, growth, enterprise
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  conversations  Conversation[]
+  preferences    UserPreference?
+  apiKeys        ApiKey[]
+
+  @@map("users")
+}
+
+// ─── Conversations ───────────────────────────────────────────
+
+model Conversation {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  title       String   @default("New conversation")
+  isArchived  Boolean  @default(false) @map("is_archived")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([userId, updatedAt(sort: Desc)])
+  @@map("conversations")
+}
+
+// ─── Messages ────────────────────────────────────────────────
+
+model Message {
+  id              String   @id @default(uuid())
+  conversationId  String   @map("conversation_id")
+  role            String   // user, assistant, system
+  content         String
+  contentType     String   @default("text") @map("content_type") // text, image, video, poster, story
+  metadata        Json?    // token usage, model info, processing time
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  conversation Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  assets       GeneratedAsset[]
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+// ─── Generated Assets ────────────────────────────────────────
+
+model GeneratedAsset {
+  id           String   @id @default(uuid())
+  messageId    String   @map("message_id")
+  assetType    String   @map("asset_type") // image, video, poster, storyboard, moodboard
+  prompt       String
+  storageUrl   String?  @map("storage_url")
+  thumbnailUrl String?  @map("thumbnail_url")
+  width        Int?
+  height       Int?
+  format       String?  // png, jpg, mp4, webp
+  fileSize     Int?     @map("file_size")
+  metadata     Json?    // model used, generation params, style, seed
+  isFavorite   Boolean  @default(false) @map("is_favorite")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("generated_assets")
+}
+
+// ─── User Preferences ────────────────────────────────────────
+
+model UserPreference {
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id")
+  preferredStyles String[] @map("preferred_styles")
+  favoriteColors  String[] @map("favorite_colors")
+  businessType    String?  @map("business_type")
+  brandVoice      String?  @map("brand_voice")
+  brandColors     String[] @map("brand_colors")
+  brandFonts      String[] @map("brand_fonts")
+  targetAudience  String?  @map("target_audience")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+// ─── API Keys (for future API access) ────────────────────────
+
+model ApiKey {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  keyHash   String   @unique @map("key_hash")
+  prefix    String   // first 8 chars for display
+  lastUsed  DateTime? @map("last_used")
+  expiresAt DateTime? @map("expires_at")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_keys")
+}
+
+// ─── Rate Limiting ───────────────────────────────────────────
+
+model RateLimit {
+  id         String   @id @default(uuid())
+  identifier String   // user_id or IP
+  endpoint   String
+  count      Int      @default(1)
+  windowStart DateTime @map("window_start")
+
+  @@index([identifier, endpoint, windowStart])
+  @@map("rate_limits")
+}
+
+// ─── Audit Log ───────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  action     String   // create, update, delete, login, logout
+  resource   String   // conversation, message, asset, user
+  resourceId String?  @map("resource_id")
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([resource, resourceId])
+  @@map("audit_logs")
+}
