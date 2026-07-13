@@ -9,26 +9,22 @@ interface ChatAreaProps {
   onRegenerate?: (asset: GeneratedAsset) => void;
   onVariation?: (asset: GeneratedAsset) => void;
   onOpen?: (asset: GeneratedAsset) => void;
+  onCopy?: (text: string) => void;
 }
 
-export default function ChatArea({ messages, onRegenerate, onVariation, onOpen }: ChatAreaProps) {
+export default function ChatArea({ messages, onRegenerate, onVariation, onOpen, onCopy }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const lastContent = messages.length > 0 ? messages[messages.length - 1].content : "";
+  const lastMsg = messages[messages.length - 1];
 
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, lastContent]);
+  }, [messages, lastMsg?.content, lastMsg?.assets?.length]);
 
   return (
-    <div
-      ref={containerRef}
-      className="flex-1 overflow-y-auto px-4"
-    >
-      <div className="max-w-3xl mx-auto py-6 space-y-6">
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-4xl mx-auto py-6 px-6 space-y-1">
         {messages.map((message) => (
           <MessageBubble
             key={message.id}
@@ -36,6 +32,7 @@ export default function ChatArea({ messages, onRegenerate, onVariation, onOpen }
             onRegenerate={onRegenerate}
             onVariation={onVariation}
             onOpen={onOpen}
+            onCopy={onCopy}
           />
         ))}
         <div ref={bottomRef} />
