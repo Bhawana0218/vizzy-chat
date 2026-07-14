@@ -141,9 +141,12 @@ export default function ChatInput({ onSend, isLoading, disabled }: ChatInputProp
           url,
           duration: recorder.duration,
           waveform: recorder.waveform,
+          transcript: recorder.transcript,
         };
         const trimmed = input.trim();
-        onSend(trimmed || "Analyze this voice message", attachments.length > 0 ? [...attachments] : undefined, voiceData);
+        const transcript = recorder.transcript.trim();
+        const messageText = trimmed || transcript || "Create an image based on my voice description";
+        onSend(messageText, attachments.length > 0 ? [...attachments] : undefined, voiceData);
         setInput("");
         setAttachments([]);
         if (textareaRef.current) textareaRef.current.style.height = "auto";

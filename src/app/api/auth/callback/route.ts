@@ -4,20 +4,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/";
   const errorParam = searchParams.get("error");
   const errorDescription = searchParams.get("error_description");
 
+  // Use production URL if available, otherwise fall back to request origin
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  const getOrigin = () => appUrl || new URL(request.url).origin;
+
   if (errorParam) {
     console.error("[AuthCallback] OAuth provider error:", errorParam, errorDescription);
-    return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(errorParam)}`);
+    return NextResponse.redirect(`${getOrigin()}/?error=${encodeURIComponent(errorParam)}`);
   }
 
   if (!code) {
     console.error("[AuthCallback] No code in callback URL");
-    return NextResponse.redirect(`${origin}/?error=no_code`);
+    return NextResponse.redirect(`${getOrigin()}/?error=no_code`);
   }
 
   try {
@@ -26,19 +30,19 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("[AuthCallback] exchangeCodeForSession failed:", error.message, error.status);
-      return NextResponse.redirect(`${origin}/?error=exchange_failed&detail=${encodeURIComponent(error.message)}`);
+      return NextResponse.redirect(`${getOrigin()}/?error=exchange_failed&detail=${encodeURIComponent(error.message)}`);
     }
 
     if (!data.session) {
       console.error("[AuthCallback] No session after exchange");
-      return NextResponse.redirect(`${origin}/?error=no_session`);
+      return NextResponse.redirect(`${getOrigin()}/?error=no_session`);
     }
 
-    const redirectUrl = `${origin}${next}`;
+    const redirectUrl = `${getOrigin()}${next}`;
     const response = NextResponse.redirect(redirectUrl);
     return response;
   } catch (err) {
     console.error("[AuthCallback] Unexpected error:", err);
-    return NextResponse.redirect(`${origin}/?error=callback_exception&detail=${encodeURIComponent(String(err))}`);
+    return NextResponse.redirect(`${getOrigin()}/?error=callback_exception&detail=${encodeURIComponent(String(err))}`);
   }
 }

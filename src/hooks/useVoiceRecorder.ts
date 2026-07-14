@@ -8,6 +8,8 @@ export interface VoiceRecordingState {
   duration: number;
   waveform: number[];
   error: string | null;
+  transcript: string;
+  isTranscribing: boolean;
 }
 
 export interface VoiceRecordingActions {
@@ -39,6 +41,8 @@ export function useVoiceRecorder(): VoiceRecordingState & VoiceRecordingActions 
     duration: 0,
     waveform: [],
     error: null,
+    transcript: "",
+    isTranscribing: false,
   });
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -50,6 +54,8 @@ export function useVoiceRecorder(): VoiceRecordingState & VoiceRecordingActions 
   const pausedDurationRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
   const collectRef = useRef<() => void>(() => {});
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const transcriptRef = useRef<string>("");
 
   useEffect(() => {
     collectRef.current = () => {
@@ -64,12 +70,62 @@ export function useVoiceRecorder(): VoiceRecordingState & VoiceRecordingActions 
     };
   }, []);
 
+  const startTranscription = useCallback(() => {
+    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) return;
+
+    const recognition = new SpeechRecognitionAPI();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalTranscript += result[0].transcript;
+        } else {
+          interimTranscript += result[0].transcript;
+        }
+      }
+      transcriptRef.current = finalTranscript || interimTranscript;
+      setState((prev) => ({ ...prev, transcript: transcriptRef.current }));
+    };
+
+    recognition.onerror = () => {
+      // Silently ignore - transcription is best-effort
+    };
+
+    recognition.onend = () => {
+      recognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+    } catch {
+      // Already started or not supported
+    }
+  }, []);
+
+  const stopTranscription = useCallback((): string => {
+    const recognition = recognitionRef.current;
+    if (recognition) {
+      try { recognition.stop(); } catch { /* ok */ }
+      recognitionRef.current = null;
+    }
+    return transcriptRef.current;
+  }, []);
+
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       streamRef.current = stream;
       chunksRef.current = [];
       pausedDurationRef.current = 0;
+      transcriptRef.current = "";
 
       const audioContext = new AudioContext();
       const source = audioContext.createMediaStreamSource(stream);
@@ -92,16 +148,24 @@ export function useVoiceRecorder(): VoiceRecordingState & VoiceRecordingActions 
       }, 100);
 
       collectRef.current();
-      setState((prev) => ({ ...prev, isRecording: true, isPaused: false, duration: 0, waveform: [], error: null }));
+      setState((prev) => ({ ...prev, isRecording: true, isPaused: false, duration: 0, waveform: [], error: null, transcript: "", isTranscribing: false }));
+
+      // Start speech-to-text
+      startTranscription();
+      setState((prev) => ({ ...prev, isTranscribing: true }));
     } catch (err) {
       const message = err instanceof DOMException && err.name === "NotAllowedError"
         ? "Microphone access denied. Please allow microphone permissions."
         : "Could not start recording. Please check your microphone.";
       setState((prev) => ({ ...prev, error: message }));
     }
-  }, []);
+  }, [startTranscription]);
 
   const stopRecording = useCallback(async (): Promise<Blob | null> => {
+    // Stop transcription first
+    const finalTranscript = stopTranscription();
+    setState((prev) => ({ ...prev, isTranscribing: false, transcript: finalTranscript }));
+
     return new Promise((resolve) => {
       const recorder = mediaRecorderRef.current;
       if (!recorder || recorder.state === "inactive") { resolve(null); return; }
@@ -112,15 +176,16 @@ export function useVoiceRecorder(): VoiceRecordingState & VoiceRecordingActions 
       };
       recorder.stop();
     });
-  }, []);
+  }, [stopTranscription]);
 
   const cancelRecording = useCallback(() => {
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") recorder.stop();
     chunksRef.current = [];
+    stopTranscription();
     doCleanup(timerRef, animFrameRef, streamRef, analyserRef, mediaRecorderRef);
-    setState((prev) => ({ ...prev, isRecording: false, isPaused: false, duration: 0, waveform: [], error: null }));
-  }, []);
+    setState((prev) => ({ ...prev, isRecording: false, isPaused: false, duration: 0, waveform: [], error: null, transcript: "", isTranscribing: false }));
+  }, [stopTranscription]);
 
   const pauseRecording = useCallback(() => {
     const recorder = mediaRecorderRef.current;
@@ -128,6 +193,12 @@ export function useVoiceRecorder(): VoiceRecordingState & VoiceRecordingActions 
       recorder.pause();
       if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null; }
       pausedDurationRef.current += Date.now() - (startTimeRef.current + pausedDurationRef.current);
+      // Pause transcription
+      const recognition = recognitionRef.current;
+      if (recognition) {
+        try { recognition.abort(); } catch { /* ok */ }
+        recognitionRef.current = null;
+      }
       setState((prev) => ({ ...prev, isPaused: true }));
     }
   }, []);
@@ -138,9 +209,51 @@ export function useVoiceRecorder(): VoiceRecordingState & VoiceRecordingActions 
       recorder.resume();
       startTimeRef.current = Date.now() - pausedDurationRef.current;
       collectRef.current();
+      // Resume transcription
+      startTranscription();
       setState((prev) => ({ ...prev, isPaused: false }));
     }
-  }, []);
+  }, [startTranscription]);
 
   return { ...state, startRecording, stopRecording, cancelRecording, pauseRecording, resumeRecording };
+}
+
+// Type declarations for Web Speech API
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
+  }
 }
