@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { Conversation, Workspace, ConversationFolder } from "@/lib/types";
+import Image from "next/image";
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -120,11 +121,7 @@ export default function Sidebar({
         {/* Logo */}
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/25">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-              </svg>
-            </div>
+            <Image src='/favicon.ico' alt="Vizzy Chat Logo" height={80} width={80}/>
             <span className="text-[15px] font-bold text-white tracking-tight">Vizzy</span>
           </div>
           <button onClick={onToggle} className="lg:hidden p-1.5 rounded-lg hover:bg-white/[0.06] text-zinc-400 hover:text-white transition-colors">

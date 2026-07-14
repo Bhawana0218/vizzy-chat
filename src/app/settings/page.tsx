@@ -41,13 +41,21 @@ export default function SettingsPage() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("vizzy-chat-brand-settings");
+      const userId = user?.id || user?.email;
+      const safeId = userId ? userId.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase() : "";
+      const key = safeId ? `vizzy-chat-brand-settings-${safeId}` : "vizzy-chat-brand-settings";
+      const raw = localStorage.getItem(key);
       if (raw) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(raw) });
     } catch { /* ok */ }
-  }, []);
+  }, [user]);
 
   const handleSave = () => {
-    try { localStorage.setItem("vizzy-chat-brand-settings", JSON.stringify(settings)); } catch { /* ok */ }
+    try {
+      const userId = user?.id || user?.email;
+      const safeId = userId ? userId.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase() : "";
+      const key = safeId ? `vizzy-chat-brand-settings-${safeId}` : "vizzy-chat-brand-settings";
+      localStorage.setItem(key, JSON.stringify(settings));
+    } catch { /* ok */ }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };

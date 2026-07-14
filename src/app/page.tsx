@@ -18,6 +18,7 @@ import CommandPalette from "@/components/CommandPalette";
 import UserMenu from "@/components/UserMenu";
 import { ToastProvider, useToast } from "@/components/Toast";
 import LoginPage from "@/app/login/page";
+import Image from "next/image";
 
 const API_TIMEOUT = 30000;
 
@@ -62,11 +63,14 @@ function generateTitle(message: string): string {
   return cleaned.split(/\s+/).slice(0, 6).join(" ") || "New conversation";
 }
 
-function loadSavedState(): { conversations: Conversation[]; folders: ConversationFolder[] } {
+function loadSavedState(userId?: string): { conversations: Conversation[]; folders: ConversationFolder[] } {
   if (typeof window === "undefined") return { conversations: [], folders: [] };
   try {
-    const raw = localStorage.getItem("vizzy-chat-conversations");
-    const rawFolders = localStorage.getItem("vizzy-chat-folders");
+    const safeId = userId ? userId.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase() : "";
+    const convKey = safeId ? `vizzy-chat-conversations-${safeId}` : "vizzy-chat-conversations";
+    const folderKey = safeId ? `vizzy-chat-folders-${safeId}` : "vizzy-chat-folders";
+    const raw = localStorage.getItem(convKey);
+    const rawFolders = localStorage.getItem(folderKey);
     const conversations = raw ? JSON.parse(raw).map((c: Conversation) => ({
       ...c,
       createdAt: new Date(c.createdAt),
@@ -194,22 +198,33 @@ function ChatApp() {
   useEffect(() => {
     if (loadedRef.current) return;
     loadedRef.current = true;
-    const { conversations: saved, folders: savedFolders } = loadSavedState();
+    const userId = user?.id || user?.email;
+    const { conversations: saved, folders: savedFolders } = loadSavedState(userId);
     setConversations(saved);
     setFolders(savedFolders);
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (conversations.length > 0) {
-      try { localStorage.setItem("vizzy-chat-conversations", JSON.stringify(conversations)); } catch { /* ok */ }
+      const userId = user?.id || user?.email;
+      try {
+        const safeId = userId ? userId.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase() : "";
+        const convKey = safeId ? `vizzy-chat-conversations-${safeId}` : "vizzy-chat-conversations";
+        localStorage.setItem(convKey, JSON.stringify(conversations));
+      } catch { /* ok */ }
     }
-  }, [conversations]);
+  }, [conversations, user]);
 
   useEffect(() => {
     if (folders.length > 0) {
-      try { localStorage.setItem("vizzy-chat-folders", JSON.stringify(folders)); } catch { /* ok */ }
+      const userId = user?.id || user?.email;
+      try {
+        const safeId = userId ? userId.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase() : "";
+        const folderKey = safeId ? `vizzy-chat-folders-${safeId}` : "vizzy-chat-folders";
+        localStorage.setItem(folderKey, JSON.stringify(folders));
+      } catch { /* ok */ }
     }
-  }, [folders]);
+  }, [folders, user]);
 
   useEffect(() => {
     return () => {
@@ -464,9 +479,9 @@ function ChatApp() {
       <div className="h-screen bg-[#06060a] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="relative">
-            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 blur-xl opacity-40 animate-pulse" />
-            <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-2xl shadow-violet-500/30">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <div className="absolute inset-0 rounded-2xl  blur-xl opacity-40" />
+            <div className="relative w-34 h-34 rounded-2x flex items-center justify-center shadow-2xl shadow-violet-500/30">
+             <Image src='/favicon.ico' alt="Vizzy Chat Logo" height={500} width={500}/>
             </div>
           </div>
           <p className="text-[13px] text-zinc-600">Loading Vizzy...</p>
@@ -514,8 +529,8 @@ function ChatApp() {
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/20">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              <div className="w-12 h-12 rounded-lg flex items-center justify-center shadow-lg shadow-violet-500/20">
+                <Image src='/favicon.ico' alt="Vizzy Chat Logo" height={400} width={400}/>
               </div>
               <span className="text-[14px] font-bold text-zinc-200 tracking-tight">Vizzy</span>
             </div>

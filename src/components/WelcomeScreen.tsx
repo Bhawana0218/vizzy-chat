@@ -1,6 +1,7 @@
 "use client";
 
 import { SUGGESTED_PROMPTS } from "@/lib/mock-data";
+import Image from "next/image";
 
 interface WelcomeScreenProps {
   onPromptSelect: (prompt: string) => void;
@@ -13,13 +14,8 @@ export default function WelcomeScreen({ onPromptSelect }: WelcomeScreenProps) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 py-12 max-w-3xl mx-auto w-full">
       <div className="text-center mb-14 animate-fade-in">
-        <div className="relative w-20 h-20 mx-auto mb-8">
-          <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-violet-500 to-fuchsia-500 blur-xl opacity-30 animate-pulse" />
-          <div className="relative w-20 h-20 rounded-3xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-2xl shadow-violet-500/30">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-            </svg>
-          </div>
+        <div className="relative w-40 h-40 mx-auto mb-8">
+           <Image src='/favicon.ico' alt="Vizzy Chat Logo" height={200} width={200}/>
         </div>
         <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
           What shall we <span className="gradient-text">create</span>?

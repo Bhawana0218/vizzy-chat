@@ -22,7 +22,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("vizzy-chat-conversations");
+      const userId = user?.id || user?.email;
+      const safeId = userId ? userId.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase() : "";
+      const key = safeId ? `vizzy-chat-conversations-${safeId}` : "vizzy-chat-conversations";
+      const raw = localStorage.getItem(key);
       if (raw) {
         const convs = JSON.parse(raw);
         const totalAssets = convs.reduce((sum: number, c: { messages?: { assets?: unknown[] }[] }) => sum + (c.messages?.reduce((s: number, m: { assets?: unknown[] }) => s + (m.assets?.length || 0), 0) || 0), 0);
@@ -34,7 +37,7 @@ export default function DashboardPage() {
         });
       }
     } catch { /* ok */ }
-  }, []);
+  }, [user]);
 
   if (loading || !user) return null;
 

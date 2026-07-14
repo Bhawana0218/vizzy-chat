@@ -20,7 +20,10 @@ export default function AssetsPage() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("vizzy-chat-conversations");
+      const userId = user?.id || user?.email;
+      const safeId = userId ? userId.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase() : "";
+      const key = safeId ? `vizzy-chat-conversations-${safeId}` : "vizzy-chat-conversations";
+      const raw = localStorage.getItem(key);
       if (raw) {
         const convs = JSON.parse(raw);
         const allAssets: GeneratedAsset[] = [];
@@ -37,7 +40,7 @@ export default function AssetsPage() {
         setAssets(allAssets.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
       }
     } catch { /* ok */ }
-  }, []);
+  }, [user]);
 
   const filtered = useMemo(() => {
     if (filter === "all") return assets;
