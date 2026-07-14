@@ -10,9 +10,13 @@ interface ChatAreaProps {
   onVariation?: (asset: GeneratedAsset) => void;
   onOpen?: (asset: GeneratedAsset) => void;
   onCopy?: (text: string) => void;
+  onCopyPrompt?: (asset: GeneratedAsset) => void;
+  onFavorite?: (asset: GeneratedAsset) => void;
+  onDelete?: (asset: GeneratedAsset) => void;
+  onRetry?: (messageId: string) => void;
 }
 
-export default function ChatArea({ messages, onRegenerate, onVariation, onOpen, onCopy }: ChatAreaProps) {
+export default function ChatArea({ messages, onRegenerate, onVariation, onOpen, onCopy, onCopyPrompt, onFavorite, onDelete, onRetry }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const lastMsg = messages[messages.length - 1];
 
@@ -33,6 +37,10 @@ export default function ChatArea({ messages, onRegenerate, onVariation, onOpen, 
             onVariation={onVariation}
             onOpen={onOpen}
             onCopy={onCopy}
+            onCopyPrompt={onCopyPrompt}
+            onFavorite={onFavorite}
+            onDelete={onDelete}
+            onRetry={onRetry ? () => onRetry(message.id) : undefined}
           />
         ))}
         <div ref={bottomRef} />

@@ -1,4 +1,4 @@
-import { Message, Conversation, GeneratedAsset } from "./types";
+import { Message, Conversation, GeneratedAsset, ReferenceImage } from "./types";
 
 // ─── Base API Client ─────────────────────────────────────────
 
@@ -40,8 +40,17 @@ async function apiRequest<T>(
 
 interface ChatStreamCallbacks {
   onChunk: (content: string) => void;
-  onDone: (messageId: string, conversationId: string, creditsRemaining: number) => void;
+  onDone: (messageId: string, conversationId: string) => void;
   onError: (error: string) => void;
+}
+
+let activeAbortController: AbortController | null = null;
+
+export function abortActiveChat() {
+  if (activeAbortController) {
+    activeAbortController.abort();
+    activeAbortController = null;
+  }
 }
 
 export async function sendChatMessage(
@@ -49,60 +58,75 @@ export async function sendChatMessage(
   conversationId: string | null,
   callbacks: ChatStreamCallbacks
 ): Promise<void> {
-  const res = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, conversationId }),
-  });
-
-  if (!res.ok) {
-    const json = await res.json().catch(() => ({}));
-    callbacks.onError(json.error?.message || "Failed to send message");
-    return;
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) {
-    callbacks.onError("No response stream");
-    return;
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = "";
+  abortActiveChat();
+  const controller = new AbortController();
+  activeAbortController = controller;
 
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, conversationId }),
+      signal: controller.signal,
+    });
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      callbacks.onError(json.error?.message || `Server error (${res.status})`);
+      return;
+    }
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data: ")) continue;
+    const reader = res.body?.getReader();
+    if (!reader) {
+      callbacks.onError("No response stream");
+      return;
+    }
 
-        try {
-          const data = JSON.parse(trimmed.slice(6));
+    const decoder = new TextDecoder();
+    let buffer = "";
 
-          if (data.error) {
-            callbacks.onError(data.error);
-            return;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data: ")) continue;
+
+          try {
+            const data = JSON.parse(trimmed.slice(6));
+
+            if (data.error) {
+              callbacks.onError(data.error);
+              return;
+            }
+
+            if (data.done) {
+              callbacks.onDone(data.messageId, data.conversationId);
+            } else if (data.content) {
+              callbacks.onChunk(data.content);
+            }
+          } catch {
+            // skip malformed JSON
           }
-
-          if (data.done) {
-            callbacks.onDone(data.messageId, data.conversationId, data.creditsRemaining);
-          } else if (data.content) {
-            callbacks.onChunk(data.content);
-          }
-        } catch {
-          // skip malformed JSON
         }
       }
+    } finally {
+      reader.releaseLock();
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      callbacks.onError("Request was cancelled");
+    } else {
+      callbacks.onError(err instanceof Error ? err.message : "Network error");
     }
   } finally {
-    reader.releaseLock();
+    activeAbortController = null;
   }
 }
 
@@ -117,11 +141,12 @@ interface GenerateParams {
   style?: string;
   conversationId?: string;
   messageId?: string;
+  referenceImages?: ReferenceImage[];
 }
 
 interface GenerateResult {
   message: { id: string; content: string };
-  assets: GeneratedAsset[];
+  assets: (GeneratedAsset & { title?: string })[];
   credits: { used: number; remaining: number };
 }
 

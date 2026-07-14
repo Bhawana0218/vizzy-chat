@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { UnauthorizedError } from "@/lib/errors";
 
 export interface AuthUser {
   id: string;
@@ -12,41 +11,60 @@ export interface AuthUser {
 }
 
 export async function getAuthUser(): Promise<AuthUser> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    throw new UnauthorizedError();
+  let supabase;
+  try {
+    supabase = await createClient();
+  } catch (err) {
+    console.error("[getAuthUser] Failed to create Supabase client:", err);
+    throw new Error("UNAUTHORIZED");
   }
 
-  // Get or create user in our database
-  const dbUser = await prisma.user.upsert({
-    where: { providerId: user.id },
-    create: {
-      email: user.email!,
-      name: user.user_metadata?.full_name || user.user_metadata?.name,
-      avatarUrl: user.user_metadata?.avatar_url,
-      provider: user.app_metadata?.provider || "google",
-      providerId: user.id,
-    },
-    update: {
-      name: user.user_metadata?.full_name || user.user_metadata?.name,
-      avatarUrl: user.user_metadata?.avatar_url,
-    },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      avatarUrl: true,
-      credits: true,
-      plan: true,
-    },
-  });
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  return dbUser;
+  if (error || !user) {
+    throw new Error("UNAUTHORIZED");
+  }
+
+  try {
+    const dbUser = await prisma.user.upsert({
+      where: { providerId: user.id },
+      create: {
+        email: user.email!,
+        name: user.user_metadata?.full_name || user.user_metadata?.name,
+        avatarUrl: user.user_metadata?.avatar_url,
+        provider: user.app_metadata?.provider || "google",
+        providerId: user.id,
+      },
+      update: {
+        name: user.user_metadata?.full_name || user.user_metadata?.name,
+        avatarUrl: user.user_metadata?.avatar_url,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        credits: true,
+        plan: true,
+      },
+    });
+    return dbUser;
+  } catch (dbErr: unknown) {
+    const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+    if (msg.includes("does not exist")) {
+      console.warn("[getAuthUser] DB tables missing — using Supabase fallback");
+    } else {
+      console.error("[getAuthUser] Prisma error:", msg);
+    }
+    return {
+      id: user.id,
+      email: user.email || "",
+      name: user.user_metadata?.full_name || user.user_metadata?.name || null,
+      avatarUrl: user.user_metadata?.avatar_url || null,
+      credits: 1000,
+      plan: "free",
+    };
+  }
 }
 
 export async function getOptionalAuthUser(): Promise<AuthUser | null> {

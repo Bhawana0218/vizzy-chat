@@ -1,22 +1,57 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { GeneratedAsset } from "@/lib/types";
+import { downloadImage, DownloadFormat } from "@/lib/download";
 
 interface CanvasModalProps {
   asset: GeneratedAsset | null;
+  allAssets?: GeneratedAsset[];
   onClose: () => void;
-  onDownload?: (asset: GeneratedAsset) => void;
   onRegenerate?: (asset: GeneratedAsset) => void;
   onVariation?: (asset: GeneratedAsset) => void;
+  onCopyPrompt?: (text: string) => void;
 }
 
-export default function CanvasModal({ asset, onClose, onDownload, onRegenerate, onVariation }: CanvasModalProps) {
+export default function CanvasModal({ asset, allAssets, onClose, onRegenerate, onVariation, onCopyPrompt }: CanvasModalProps) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [showMetadata, setShowMetadata] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>("png");
+  const [downloading, setDownloading] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLDivElement>(null);
+
+  const currentIndex = allAssets && asset ? allAssets.findIndex((a) => a.id === asset.id) : -1;
+  const hasNav = allAssets && allAssets.length > 1 && currentIndex >= 0;
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      setImgLoaded(false);
+    });
+  }, [asset?.id]);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
+      if (e.key === "+" || e.key === "=") setZoom((z) => Math.min(z + 0.25, 5));
+      if (e.key === "-") setZoom((z) => Math.max(z - 0.25, 0.25));
+      if (e.key === "0") { setZoom(1); setPan({ x: 0, y: 0 }); }
+      if (e.key === "ArrowLeft" && hasNav && currentIndex > 0) {
+        const prev = allAssets![currentIndex - 1];
+        onRegenerate?.(prev);
+      }
+      if (e.key === "ArrowRight" && hasNav && currentIndex < allAssets!.length - 1) {
+        const next = allAssets![currentIndex + 1];
+        onRegenerate?.(next);
+      }
     },
-    [onClose]
+    [onClose, hasNav, currentIndex, allAssets, onRegenerate]
   );
 
   useEffect(() => {
@@ -30,127 +65,234 @@ export default function CanvasModal({ asset, onClose, onDownload, onRegenerate, 
     };
   }, [asset, handleKeyDown]);
 
-  if (!asset) return null;
+  useEffect(() => {
+    const modal = modalRef.current;
+    if (!asset || !modal) return;
 
-  const gradients: Record<string, string> = {
-    "Hero Shot": "linear-gradient(135deg, #1a1612 0%, #3d2e1a 30%, #1a1612 60%, #0d0a07 100%)",
-    "Lifestyle": "linear-gradient(135deg, #1c1917 0%, #44403c 40%, #292524 70%, #0c0a09 100%)",
-    "Detail": "linear-gradient(135deg, #292524 0%, #57534e 30%, #292524 60%, #1c1917 100%)",
-    "Oil Painting": "linear-gradient(135deg, #422006 0%, #92400e 30%, #78350f 60%, #451a03 100%)",
-    "Baroque Style": "linear-gradient(135deg, #1c1917 0%, #713f12 40%, #292524 70%, #0c0a09 100%)",
-    "Serenity": "linear-gradient(135deg, #1e1b4b 0%, #4338ca 30%, #3730a3 60%, #1e1b4b 100%)",
-    "Reflection": "linear-gradient(135deg, #1e3a5f 0%, #1e40af 40%, #3730a3 70%, #1e1b4b 100%)",
-    "Inner Peace": "linear-gradient(135deg, #2e1065 0%, #7c3aed 30%, #6d28d9 60%, #1e1b4b 100%)",
-    "Contemplation": "linear-gradient(135deg, #0f172a 0%, #1e3a5f 40%, #1e40af 70%, #1e1b4b 100%)",
-    "Career Goals": "linear-gradient(135deg, #4c0519 0%, #be123c 30%, #9f1239 60%, #881337 100%)",
-    "Health & Wellness": "linear-gradient(135deg, #064e3b 0%, #059669 30%, #047857 60%, #064e3b 100%)",
-    "Financial Growth": "linear-gradient(135deg, #451a03 0%, #d97706 30%, #b45309 60%, #451a03 100%)",
-    "Personal Growth": "linear-gradient(135deg, #1e3a5f 0%, #2563eb 30%, #1d4ed8 60%, #1e3a5f 100%)",
-    "Travel Dreams": "linear-gradient(135deg, #2e1065 0%, #7c3aed 30%, #6d28d9 60%, #2e1065 100%)",
-    "Family & Home": "linear-gradient(135deg, #042f2e 0%, #0d9488 30%, #0f766e 60%, #042f2e 100%)",
-    "The Dream Portal": "linear-gradient(135deg, #0c0a30 0%, #4c1d95 30%, #7c3aed 60%, #1e1b4b 100%)",
-    "Ethereal Passage": "linear-gradient(135deg, #1a0533 0%, #a21caf 30%, #7c3aed 60%, #0c0a30 100%)",
-    "Dream Realm": "linear-gradient(135deg, #0a1628 0%, #1e40af 30%, #4338ca 60%, #1e1b4b 100%)",
-    "Chapter 1: The Meadow": "linear-gradient(135deg, #0ea5e9 0%, #38bdf8 30%, #7dd3fc 60%, #0284c7 100%)",
-    "Chapter 2: The Forest": "linear-gradient(135deg, #059669 0%, #34d399 30%, #6ee7b7 60%, #047857 100%)",
-    "Chapter 3: The Mountain": "linear-gradient(135deg, #d97706 0%, #fbbf24 30%, #fde68a 60%, #b45309 100%)",
-    "Premium Sale Banner": "linear-gradient(135deg, #991b1b 0%, #dc2626 30%, #b91c1c 60%, #7f1d1d 100%)",
-    "Seasonal Offer": "linear-gradient(135deg, #92400e 0%, #f59e0b 30%, #d97706 60%, #78350f 100%)",
-    "Winter Elegance": "linear-gradient(135deg, #dbeafe 0%, #93c5fd 30%, #bfdbfe 60%, #60a5fa 100%)",
-    "Frost Collection": "linear-gradient(135deg, #e2e8f0 0%, #94a3b8 30%, #cbd5e1 60%, #64748b 100%)",
-    "Holiday Warmth": "linear-gradient(135deg, #ccfbf1 0%, #5eead4 30%, #99f6e4 60%, #2dd4bf 100%)",
-    "Brand Essence": "linear-gradient(135deg, #2e1065 0%, #7c3aed 30%, #5b21b6 60%, #2e1065 100%)",
-    "Core Values": "linear-gradient(135deg, #1e3a5f 0%, #2563eb 30%, #1d4ed8 60%, #1e3a5f 100%)",
-    "Minimalist": "linear-gradient(135deg, #e7e5e4 0%, #d6d3d1 30%, #f5f5f4 60%, #e7e5e4 100%)",
-    "Bold Dark": "linear-gradient(135deg, #1e1b4b 0%, #4338ca 30%, #3730a3 60%, #1e1b4b 100%)",
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const delta = event.deltaY > 0 ? -0.1 : 0.1;
+      setZoom((z) => Math.min(Math.max(z + delta, 0.25), 5));
+    };
+
+    modal.addEventListener("wheel", handleWheel, { passive: false });
+    return () => modal.removeEventListener("wheel", handleWheel);
+  }, [asset]);
+
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (zoom <= 1) return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  }, [zoom, pan]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging) return;
+    setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+  }, [isDragging, dragStart]);
+
+  const handleMouseUp = useCallback(() => setIsDragging(false), []);
+
+  const handleDownload = async () => {
+    if (!asset) return;
+    setDownloading(true);
+    try {
+      await downloadImage({ url: asset.url, filename: asset.title || "vizzy-asset", format: downloadFormat });
+    } catch {
+      const a = document.createElement("a");
+      a.href = asset.url;
+      a.download = `vizzy-${asset.title || "asset"}.${downloadFormat}`;
+      a.click();
+    } finally {
+      setDownloading(false);
+    }
   };
 
-  const bg = gradients[asset.title] || gradients["Serenity"];
+  const navigate = (dir: -1 | 1) => {
+    if (!allAssets || currentIndex < 0) return;
+    const next = currentIndex + dir;
+    if (next >= 0 && next < allAssets.length) {
+      onRegenerate?.(allAssets[next]);
+    }
+  };
+
+  if (!asset) return null;
+
+  const metaItems = [
+    { label: "Prompt", value: asset.prompt },
+    { label: "Style", value: asset.metadata?.style || asset.variationName || "Standard" },
+    { label: "Size", value: `${asset.width} × ${asset.height}` },
+    { label: "Model", value: asset.metadata?.model || "Pollinations AI" },
+    { label: "Seed", value: asset.metadata?.seed?.toString() || "Random" },
+    { label: "Variation", value: asset.metadata?.variationName || "—" },
+  ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div
-        className="absolute inset-0 bg-black/80 backdrop-blur-md animate-fade-in"
-        onClick={onClose}
-      />
+    <div ref={modalRef} className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/85 backdrop-blur-xl" onClick={onClose} />
 
-      <div className="relative z-10 w-full max-w-4xl mx-4 animate-slide-up">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4 px-1">
-          <div>
-            <h2 className="text-lg font-semibold text-white">{asset.title}</h2>
-            <p className="text-[13px] text-zinc-500 mt-0.5">{asset.type.toUpperCase()} &middot; {asset.width}&times;{asset.height}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl hover:bg-white/[0.08] text-zinc-400 hover:text-white transition-colors"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-          </button>
-        </div>
-
-        {/* Canvas area */}
-        <div className="relative rounded-2xl overflow-hidden border border-white/[0.08] bg-[#111113]" style={{ aspectRatio: asset.type === "video" ? "16/9" : "1/1" }}>
-          <div className="absolute inset-0" style={{ background: bg }} />
-
-          {/* Canvas tools */}
-          <div className="absolute top-4 left-4 flex flex-col gap-2">
-            {[
-              { icon: "M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z", label: "Edit" },
-              { icon: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15", label: "Inpaint" },
-              { icon: "M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01", label: "Recolor" },
-            ].map((tool) => (
-              <button
-                key={tool.label}
-                title={tool.label}
-                className="w-9 h-9 rounded-xl bg-black/50 backdrop-blur-sm border border-white/[0.08] flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/[0.1] transition-colors"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={tool.icon}/></svg>
-              </button>
-            ))}
-          </div>
-
-          {/* Zoom controls */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/50 backdrop-blur-sm border border-white/[0.08] rounded-xl px-2 py-1">
-            <button className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-            </button>
-            <span className="text-[11px] text-zinc-500 px-2 min-w-[36px] text-center">100%</span>
-            <button className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Action bar */}
-        <div className="flex items-center justify-between mt-4 px-1">
+      <div className="relative z-10 w-full h-full flex flex-col max-w-[1400px] mx-auto p-4 md:p-6">
+        {/* Top Bar */}
+        <div className="flex items-center justify-between mb-3 shrink-0">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => onRegenerate?.(asset)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-[13px] text-zinc-300 hover:text-white transition-all"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-              Regenerate
+            <h2 className="text-sm font-semibold text-white truncate max-w-[300px]">{asset.title}</h2>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-zinc-400 uppercase font-medium">{asset.type}</span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {hasNav && (
+              <div className="flex items-center gap-1 mr-2 px-2 py-1 rounded-lg bg-white/[0.06]">
+                <button onClick={() => navigate(-1)} disabled={currentIndex === 0} className="p-1 text-zinc-400 hover:text-white disabled:opacity-30 transition-colors">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <span className="text-[11px] text-zinc-500 min-w-[40px] text-center">{currentIndex + 1}/{allAssets!.length}</span>
+                <button onClick={() => navigate(1)} disabled={currentIndex === allAssets!.length - 1} className="p-1 text-zinc-400 hover:text-white disabled:opacity-30 transition-colors">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.06]">
+              <button onClick={() => { setZoom((z) => Math.max(z - 0.25, 0.25)); }} className="p-1 text-zinc-400 hover:text-white transition-colors">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <span className="text-[11px] text-zinc-400 min-w-[40px] text-center">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => { setZoom((z) => Math.min(z + 0.25, 5)); }} className="p-1 text-zinc-400 hover:text-white transition-colors">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="p-1 text-zinc-400 hover:text-white transition-colors ml-1">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+              </button>
+            </div>
+
+            <button onClick={() => setShowMetadata(!showMetadata)} className={`p-2 rounded-lg transition-colors ${showMetadata ? "bg-violet-500/20 text-violet-400" : "bg-white/[0.06] text-zinc-400 hover:text-white"}`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             </button>
-            <button
-              onClick={() => onVariation?.(asset)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-[13px] text-zinc-300 hover:text-white transition-all"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="8" height="8" rx="1"/></svg>
-              Variation
-            </button>
-            <button className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-[13px] text-zinc-300 hover:text-white transition-all">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Edit in Canvas
+
+            <button onClick={onClose} className="p-2 rounded-lg bg-white/[0.06] text-zinc-400 hover:text-white hover:bg-white/[0.1] transition-colors">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
-          <button
-            onClick={() => onDownload?.(asset)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[13px] font-medium transition-all shadow-lg shadow-violet-500/20"
+        </div>
+
+        {/* Main Content */}
+        <div className="flex-1 flex gap-3 min-h-0">
+          {/* Image Area */}
+          <div
+            className={`flex-1 flex items-center justify-center rounded-2xl bg-[#0a0a0c] border border-white/[0.06] overflow-hidden transition-all ${showMetadata ? "mr-0" : ""}`}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            style={{ cursor: zoom > 1 ? (isDragging ? "grabbing" : "grab") : "default" }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Export
-          </button>
+            <div
+              ref={imgRef}
+              className="relative flex items-center justify-center w-full h-full p-4"
+              style={{
+                transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+                transition: isDragging ? "none" : "transform 0.2s ease-out",
+              }}
+            >
+              {!imgLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-10 h-10 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+                    <span className="text-[12px] text-zinc-500">Loading image...</span>
+                  </div>
+                </div>
+              )}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={asset.url}
+                alt={asset.title}
+                className="max-w-full max-h-[85vh] object-contain rounded-lg select-none"
+                draggable={false}
+                onLoad={() => setImgLoaded(true)}
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = "none";
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Metadata Panel */}
+          {showMetadata && (
+            <div className="w-[280px] shrink-0 rounded-2xl bg-[#111113] border border-white/[0.06] p-4 overflow-y-auto">
+              <h3 className="text-[13px] font-semibold text-white mb-4">Image Details</h3>
+              <div className="space-y-3">
+                {metaItems.map((item) => (
+                  <div key={item.label}>
+                    <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">{item.label}</span>
+                    <p className="text-[12px] text-zinc-300 mt-1 break-words leading-relaxed">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 pt-4 border-t border-white/[0.06]">
+                <h4 className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium mb-3">Download As</h4>
+                <div className="flex gap-1.5">
+                  {(["png", "jpg", "webp"] as DownloadFormat[]).map((fmt) => (
+                    <button
+                      key={fmt}
+                      onClick={() => setDownloadFormat(fmt)}
+                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium uppercase transition-colors ${
+                        downloadFormat === fmt
+                          ? "bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                          : "bg-white/[0.04] text-zinc-500 border border-white/[0.06] hover:text-zinc-300"
+                      }`}
+                    >
+                      {fmt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-1.5">
+                <button
+                  onClick={handleDownload}
+                  disabled={downloading}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[12px] font-medium transition-all disabled:opacity-50"
+                >
+                  {downloading ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  )}
+                  Download {downloadFormat.toUpperCase()}
+                </button>
+
+                <button
+                  onClick={() => asset.metadata?.gradient ? navigator.clipboard.writeText(asset.prompt) : onCopyPrompt?.(asset.prompt)}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-white text-[12px] font-medium border border-white/[0.06] transition-all"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  Copy Prompt
+                </button>
+
+                {onRegenerate && (
+                  <button
+                    onClick={() => onRegenerate(asset)}
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-white text-[12px] font-medium border border-white/[0.06] transition-all"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                    Regenerate
+                  </button>
+                )}
+
+                {onVariation && (
+                  <button
+                    onClick={() => onVariation(asset)}
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-white text-[12px] font-medium border border-white/[0.06] transition-all"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="8" height="8" rx="1"/></svg>
+                    Create Variations
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

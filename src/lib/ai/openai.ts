@@ -1,13 +1,13 @@
-import {
-  AIProviderInterface,
-  GenerateImageParams,
-  AIImageResult,
-  ChatCompletionParams,
-  ChatCompletionResult,
-} from "./types";
+/**
+ * OpenAI Chat Provider
+ *
+ * Handles text chat completions via OpenAI's API (GPT-4o).
+ * Image generation is handled separately by Pollinations AI.
+ */
 
-export class OpenAIProvider implements AIProviderInterface {
-  name = "openai" as const;
+import { ChatCompletionParams, ChatCompletionResult } from "./types";
+
+export class OpenAIProvider {
   private apiKey: string;
   private baseUrl: string;
 
@@ -21,35 +21,6 @@ export class OpenAIProvider implements AIProviderInterface {
       Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
     };
-  }
-
-  async generateImage(params: GenerateImageParams): Promise<AIImageResult[]> {
-    const response = await fetch(`${this.baseUrl}/images/generations`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({
-        model: "gpt-image-1",
-        prompt: params.prompt,
-        n: params.n || 1,
-        size: `${params.width}x${params.height}`,
-        quality: "high",
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(
-        `OpenAI image generation failed: ${response.status} - ${JSON.stringify(err)}`
-      );
-    }
-
-    const data = await response.json();
-    return data.data.map(
-      (item: { url?: string; b64_json?: string; revised_prompt?: string }) => ({
-        url: item.url || `data:image/png;base64,${item.b64_json}`,
-        revisedPrompt: item.revised_prompt,
-      })
-    );
   }
 
   async chatCompletion(

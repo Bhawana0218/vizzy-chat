@@ -17,6 +17,12 @@ export type ChatMessageInput = z.infer<typeof ChatMessageSchema>;
 
 // ─── Generate ────────────────────────────────────────────────
 
+const ReferenceImageSchema = z.object({
+  name: z.string().min(1).max(255),
+  type: z.string().regex(/^image\/(png|jpe?g|webp)$/i),
+  dataUrl: z.string().regex(/^data:image\/(png|jpe?g|webp);base64,/i),
+});
+
 export const GenerateAssetSchema = z.object({
   prompt: z
     .string()
@@ -29,6 +35,7 @@ export const GenerateAssetSchema = z.object({
   count: z.number().int().min(1).max(6).default(1),
   conversationId: z.string().uuid().optional(),
   messageId: z.string().uuid().optional(),
+  referenceImages: z.array(ReferenceImageSchema).max(4).optional(),
 });
 
 export type GenerateAssetInput = z.infer<typeof GenerateAssetSchema>;

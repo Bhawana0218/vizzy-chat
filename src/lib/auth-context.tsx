@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useRef, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useRef, useEffect, useCallback, useMemo, ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
@@ -30,23 +30,35 @@ export function useAuth() {
   return ctx;
 }
 
-async function fetchUserProfile(supabaseUser: User): Promise<AuthUser> {
-  await fetch("/api/auth/callback", { method: "GET" });
+function buildFallbackProfile(sbUser: User): AuthUser {
   return {
-    id: supabaseUser.id,
-    email: supabaseUser.email || "",
-    name: supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || null,
-    avatarUrl: supabaseUser.user_metadata?.avatar_url || null,
+    id: sbUser.id,
+    email: sbUser.email || "",
+    name: sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || null,
+    avatarUrl: sbUser.user_metadata?.avatar_url || null,
     credits: 1000,
-    plan: "creator",
+    plan: "free",
   };
+}
+
+async function fetchUserProfile(sbUser: User): Promise<AuthUser> {
+  try {
+    const res = await fetch("/api/auth/me");
+    if (res.ok) {
+      const json = await res.json();
+      if (json.data) return json.data;
+    }
+  } catch {
+    // Network error or API down
+  }
+  return buildFallbackProfile(sbUser);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -89,11 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-       
-        queryParams: {
-          access_type: "offline",
-          prompt: "consent",
-        },
+        redirectTo: `${origin}/api/auth/callback`,
       },
     });
   }, [supabase]);
@@ -106,12 +114,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [supabase]);
 
   const refreshUser = useCallback(async () => {
-    const { data: { user: sbUser } } = await supabase.auth.getUser();
-    setSupabaseUser(sbUser);
-    if (sbUser) {
-      const profile = await fetchUserProfile(sbUser);
-      setUser(profile);
-    } else {
+    try {
+      const { data: { user: sbUser } } = await supabase.auth.getUser();
+      setSupabaseUser(sbUser);
+      if (sbUser) {
+        const profile = await fetchUserProfile(sbUser);
+        setUser(profile);
+      } else {
+        setUser(null);
+      }
+    } catch {
+      setSupabaseUser(null);
       setUser(null);
     }
   }, [supabase]);

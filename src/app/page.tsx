@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Message, Conversation, GeneratedAsset, MessageAttachment, Workspace, ConversationFolder, GenerationStage, VoiceData } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
-import { sendChatMessage } from "@/lib/api";
+import { sendChatMessage, abortActiveChat, generateAssets, updateAsset, deleteAsset } from "@/lib/api";
 import { enhancePrompt, getMockResponseForIntent } from "@/lib/ai/prompt-engine";
 import { getMockResponse, buildAssets } from "@/lib/mock-data";
 import Sidebar from "@/components/Sidebar";
@@ -12,6 +12,7 @@ import ChatArea from "@/components/ChatArea";
 import ChatInput from "@/components/ChatInput";
 import AssetWorkspace from "@/components/AssetWorkspace";
 import CanvasModal from "@/components/CanvasModal";
+import CompareModal from "@/components/CompareModal";
 import CreditsBadge from "@/components/CreditsBadge";
 import CommandPalette from "@/components/CommandPalette";
 import UserMenu from "@/components/UserMenu";
@@ -19,6 +20,38 @@ import { ToastProvider, useToast } from "@/components/Toast";
 import LoginPage from "@/app/login/page";
 
 const API_TIMEOUT = 30000;
+
+const IMAGE_INTENT_KEYWORDS = [
+  "poster", "banner", "logo", "image", "picture", "photo", "artwork",
+  "ad ", "advertisement", "campaign", "social media", "instagram",
+  "product ad", "brand artwork", "vision board", "storyboard", "moodboard",
+  "luxury product", "premium", "elegant", "cinematic", "renaissance",
+  "dream scene", "fantasy", "children", "quote poster", "typography",
+  "winter campaign", "sale poster", "signage", "frost", "holiday",
+  "generate", "visualize", "make it look", "design a",
+];
+
+function detectImageIntent(text: string): { shouldGenerate: boolean; assetType: "image" | "poster" | "storyboard" | "moodboard"; count: number } {
+  const lower = text.toLowerCase();
+  const hasKeyword = IMAGE_INTENT_KEYWORDS.some((kw) => lower.includes(kw));
+  if (!hasKeyword) return { shouldGenerate: false, assetType: "image", count: 0 };
+
+  let assetType: "image" | "poster" | "storyboard" | "moodboard" = "image";
+  if (lower.includes("poster") || lower.includes("banner") || lower.includes("flyer") || lower.includes("signage")) assetType = "poster";
+  else if (lower.includes("storyboard") || lower.includes("children") || lower.includes("chapter")) assetType = "storyboard";
+  else if (lower.includes("moodboard") || lower.includes("vision board") || lower.includes("collage")) assetType = "moodboard";
+
+  let count = 3;
+  if (lower.includes("variation") || lower.includes("alternative")) count = 4;
+  else if (lower.includes("pair") || lower.includes("both") || lower.includes("two")) count = 2;
+  else if (lower.includes("single") || lower.includes("one")) count = 1;
+
+  return { shouldGenerate: true, assetType, count };
+}
+
+function isValidUUID(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -29,19 +62,24 @@ function generateTitle(message: string): string {
   return cleaned.split(/\s+/).slice(0, 6).join(" ") || "New conversation";
 }
 
-function loadSavedConversations(): Conversation[] {
-  if (typeof window === "undefined") return [];
+function loadSavedState(): { conversations: Conversation[]; folders: ConversationFolder[] } {
+  if (typeof window === "undefined") return { conversations: [], folders: [] };
   try {
     const raw = localStorage.getItem("vizzy-chat-conversations");
-    if (!raw) return [];
-    return JSON.parse(raw).map((c: Conversation) => ({
+    const rawFolders = localStorage.getItem("vizzy-chat-folders");
+    const conversations = raw ? JSON.parse(raw).map((c: Conversation) => ({
       ...c,
       createdAt: new Date(c.createdAt),
       updatedAt: new Date(c.updatedAt),
       messages: c.messages.map((m: Message) => ({ ...m, timestamp: new Date(m.timestamp) })),
-    }));
+    })) : [];
+    const folders: ConversationFolder[] = rawFolders ? JSON.parse(rawFolders) : [
+      { id: "business", name: "Business", icon: "briefcase", color: "text-amber-400" },
+      { id: "personal", name: "Personal", icon: "heart", color: "text-pink-400" },
+    ];
+    return { conversations, folders };
   } catch {
-    return [];
+    return { conversations: [], folders: [] };
   }
 }
 
@@ -84,7 +122,7 @@ function mockGenerationPipeline(
     }));
 
     stageIdx++;
-    if (stageIdx <= stages.length) {
+    if (stageIdx < stages.length) {
       setTimeout(advanceStage, 400 + Math.random() * 300);
     } else {
       streamFinalResponse(responseText, assets, enhanced.enhanced, convId, assistantId, updateConversation, setIsLoading, addToast);
@@ -144,23 +182,22 @@ function ChatApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [assetsPanelOpen, setAssetsPanelOpen] = useState(false);
   const [canvasAsset, setCanvasAsset] = useState<GeneratedAsset | null>(null);
+  const [compareAssets, setCompareAssets] = useState<GeneratedAsset[] | null>(null);
   const [workspace, setWorkspace] = useState<Workspace>("personal");
-  const [folders] = useState<ConversationFolder[]>([
-    { id: "business", name: "Business", icon: "briefcase", color: "text-amber-400" },
-    { id: "personal", name: "Personal", icon: "heart", color: "text-pink-400" },
-  ]);
+  const [folders, setFolders] = useState<ConversationFolder[]>([]);
   const { addToast } = useToast();
 
   const activeConv = conversations.find((c) => c.id === activeConvId) || null;
   const messages = activeConv?.messages || [];
-
   const allAssets = messages.flatMap((m) => m.assets || []);
 
   useEffect(() => {
-    if (!user || loadedRef.current) return;
+    if (loadedRef.current) return;
     loadedRef.current = true;
-    setConversations(loadSavedConversations());
-  }, [user]);
+    const { conversations: saved, folders: savedFolders } = loadSavedState();
+    setConversations(saved);
+    setFolders(savedFolders);
+  }, []);
 
   useEffect(() => {
     if (conversations.length > 0) {
@@ -168,10 +205,17 @@ function ChatApp() {
     }
   }, [conversations]);
 
-  // Assets panel auto-opens via streaming pipeline when assets are generated
+  useEffect(() => {
+    if (folders.length > 0) {
+      try { localStorage.setItem("vizzy-chat-folders", JSON.stringify(folders)); } catch { /* ok */ }
+    }
+  }, [folders]);
 
   useEffect(() => {
-    return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      abortActiveChat();
+    };
   }, []);
 
   const updateConversation = useCallback(
@@ -206,7 +250,14 @@ function ChatApp() {
       setIsLoading(true);
 
       let settled = false;
-      const settle = () => { if (!settled) { settled = true; if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; } } };
+      const settle = () => {
+        if (!settled) {
+          settled = true;
+          if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+        }
+      };
+
+      const imageIntent = detectImageIntent(text);
 
       sendChatMessage(text, activeConvId, {
         onChunk: (chunk) => {
@@ -226,9 +277,63 @@ function ChatApp() {
             updatedAt: new Date(),
           }));
           setIsLoading(false);
+
+          if (imageIntent.shouldGenerate) {
+            const referenceImages = (attachs || [])
+              .filter((attachment) => attachment.type.startsWith("image/") && attachment.previewUrl)
+              .map((attachment) => ({
+                name: attachment.name,
+                type: attachment.type,
+                dataUrl: attachment.previewUrl,
+              }));
+
+            generateAssets({
+              prompt: text,
+              assetType: imageIntent.assetType,
+              count: imageIntent.count,
+              conversationId: newConvId && isValidUUID(newConvId) ? newConvId : undefined,
+              referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+            }).then((result) => {
+              if (result.assets && result.assets.length > 0) {
+                updateConversation(convId!, (conv) => ({
+                  ...conv,
+                  messages: conv.messages.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          assets: result.assets.map((a) => ({
+                            id: a.id || generateId(),
+                            type: (a.type || "image") as GeneratedAsset["type"],
+                            url: a.url || "",
+                            title: a.prompt || "Generated asset",
+                            prompt: a.prompt || "",
+                            width: a.width || 1024,
+                            height: a.height || 1024,
+                          })),
+                        }
+                      : m
+                  ),
+                  updatedAt: new Date(),
+                }));
+                addToast(`Generated ${result.assets.length} assets`, "success");
+              }
+            }).catch((err) => {
+              console.error("Image generation failed:", err);
+              addToast("Image generation failed — try again", "error");
+            });
+          }
         },
-        onError: () => {
+        onError: (error) => {
           settle();
+          updateConversation(convId!, (conv) => ({
+            ...conv,
+            messages: conv.messages.map((m) =>
+              m.id === assistantId ? { ...m, content: error || "Something went wrong.", error: error || "Generation failed", stage: "error", isStreaming: false } : m
+            ),
+            updatedAt: new Date(),
+          }));
+          setIsLoading(false);
+          addToast(error || "AI service unavailable, generating locally...", "info");
           mockGenerationPipeline(text, (attachs?.length || 0) > 0, convId!, assistantId, updateConversation, setIsLoading, addToast);
         },
       });
@@ -236,6 +341,16 @@ function ChatApp() {
       timeoutRef.current = setTimeout(() => {
         if (!settled) {
           settle();
+          abortActiveChat();
+          updateConversation(convId!, (conv) => ({
+            ...conv,
+            messages: conv.messages.map((m) =>
+              m.id === assistantId ? { ...m, content: "Request timed out.", error: "Request timed out", stage: "error", isStreaming: false } : m
+            ),
+            updatedAt: new Date(),
+          }));
+          setIsLoading(false);
+          addToast("Request timed out, generating locally...", "info");
           mockGenerationPipeline(text, (attachs?.length || 0) > 0, convId!, assistantId, updateConversation, setIsLoading, addToast);
         }
       }, API_TIMEOUT);
@@ -265,18 +380,83 @@ function ChatApp() {
     }, []
   );
 
-  const handleNewConversation = useCallback(() => { setActiveConvId(null); setSidebarOpen(false); }, []);
-  const handleSelectConversation = useCallback((id: string) => { setActiveConvId(id); setSidebarOpen(false); }, []);
-  const handleDeleteConversation = useCallback(
-    (id: string) => { setConversations((prev) => prev.filter((c) => c.id !== id)); if (activeConvId === id) setActiveConvId(null); addToast("Conversation deleted", "info"); },
+  const handleArchive = useCallback(
+    (id: string) => {
+      setConversations((prev) => prev.map((c) => c.id === id ? { ...c, isArchived: !c.isArchived } : c));
+      if (activeConvId === id) setActiveConvId(null);
+      addToast("Conversation archived", "info");
+    },
     [activeConvId, addToast]
   );
 
+  const handleFavorite = useCallback(
+    async (asset: GeneratedAsset) => {
+      const newFav = !asset.favorited;
+      updateConversation(asset.id.split("-")[0] || "", (conv) => ({
+        ...conv,
+        messages: conv.messages.map((m) => ({
+          ...m,
+          assets: m.assets?.map((a) => a.id === asset.id ? { ...a, favorited: newFav } : a),
+        })),
+      }));
+      try { await updateAsset(asset.id, { isFavorite: newFav }); } catch { /* best effort */ }
+      addToast(newFav ? "Added to favorites" : "Removed from favorites", "success");
+    },
+    [updateConversation, addToast]
+  );
+
+  const handleDeleteAsset = useCallback(
+    async (asset: GeneratedAsset) => {
+      setConversations((prev) => prev.map((conv) => ({
+        ...conv,
+        messages: conv.messages.map((m) => ({
+          ...m,
+          assets: m.assets?.filter((a) => a.id !== asset.id),
+        })),
+      })));
+      try { await deleteAsset(asset.id); } catch { /* best effort */ }
+      addToast("Asset deleted", "info");
+    },
+    [addToast]
+  );
+
+  const handleNewFolder = useCallback(() => {
+    const newFolder: ConversationFolder = {
+      id: `folder-${Date.now()}`,
+      name: "New Folder",
+      icon: "folder",
+      color: "text-zinc-400",
+    };
+    setFolders((prev) => [...prev, newFolder]);
+    addToast("Folder created", "success");
+  }, [addToast]);
+
+  const handleRenameFolder = useCallback(
+    (id: string, name: string) => {
+      if (!name.trim()) return;
+      setFolders((prev) => prev.map((f) => f.id === id ? { ...f, name: name.trim() } : f));
+    },
+    []
+  );
+
+  const handleDeleteFolder = useCallback(
+    (id: string) => {
+      setFolders((prev) => prev.filter((f) => f.id !== id));
+      setConversations((prev) => prev.map((c) => c.folderId === id ? { ...c, folderId: undefined } : c));
+      addToast("Folder deleted", "info");
+    },
+    [addToast]
+  );
+
   const commandPaletteCommands = [
-    { id: "new-chat", label: "New Conversation", shortcut: "Ctrl+N", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>, action: handleNewConversation },
+    { id: "new-chat", label: "New Conversation", shortcut: "Ctrl+N", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>, action: () => { setActiveConvId(null); setSidebarOpen(false); } },
     { id: "luxury", label: "Create a luxury product ad", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>, action: () => handleSend("Create a luxury product ad for Instagram") },
     { id: "renaissance", label: "Turn photo into renaissance art", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg>, action: () => handleSend("Turn this photo into a renaissance-style artwork") },
     { id: "vision", label: "Generate a vision board", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="8" height="8" rx="1"/></svg>, action: () => handleSend("Create a vision board with my goals for the next 3 years") },
+    { id: "dream", label: "Dream visualization", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>, action: () => handleSend("Create a dreamlike version of a beautiful sunset over mountains") },
+    { id: "storyboard", label: "Visual story for kids", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>, action: () => handleSend("Generate a children's story about a brave little fox, visualize it scene by scene") },
+    { id: "quote", label: "Quote poster for room", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 21l1.65-3.8a9 9 0 1 1 3.4 2.9L3 21"/></svg>, action: () => handleSend("Design a quote poster for my living room with the words 'Be the change you wish to see'") },
+    { id: "product-photo", label: "Product photography", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>, action: () => handleSend("Create premium product photography for a luxury watch without making it feel expensive") },
   ];
 
   if (authLoading) {
@@ -297,25 +477,27 @@ function ChatApp() {
 
   if (!user) return <LoginPage />;
 
+  const activeConversations = conversations.filter((c) => !c.isArchived);
+
   return (
     <div className="flex h-screen bg-[#06060a] text-white overflow-hidden noise-overlay">
       <div className="ambient-bg" />
       <CommandPalette commands={commandPaletteCommands} />
       <Sidebar
-        conversations={conversations}
+        conversations={activeConversations}
         activeId={activeConvId}
-        onSelect={handleSelectConversation}
-        onNew={handleNewConversation}
-        onDelete={handleDeleteConversation}
+        onSelect={(id) => { setActiveConvId(id); setSidebarOpen(false); }}
+        onNew={() => { setActiveConvId(null); setSidebarOpen(false); }}
+        onDelete={(id) => { setConversations((prev) => prev.filter((c) => c.id !== id)); if (activeConvId === id) setActiveConvId(null); addToast("Conversation deleted", "info"); }}
         onPin={handlePin}
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         workspace={workspace}
         onWorkspaceChange={setWorkspace}
         folders={folders}
-        onNewFolder={() => {}}
-        onRenameFolder={() => {}}
-        onDeleteFolder={() => {}}
+        onNewFolder={handleNewFolder}
+        onRenameFolder={handleRenameFolder}
+        onDeleteFolder={handleDeleteFolder}
       />
       <main className="flex-1 flex flex-col min-w-0 relative z-10">
         <header className="flex items-center gap-3 px-4 h-14 border-b border-white/[0.06] bg-[#06060a]/80 backdrop-blur-xl shrink-0 z-20">
@@ -326,6 +508,9 @@ function ChatApp() {
             <div className="flex items-center gap-2 min-w-0">
               <h2 className="text-[14px] font-medium text-zinc-200 truncate">{activeConv.title}</h2>
               <span className="text-[11px] text-zinc-600 shrink-0 hidden sm:inline">{activeConv.messages.filter((m) => m.role === "user").length} prompts</span>
+              {activeConv.isArchived && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-medium">Archived</span>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-2">
@@ -354,19 +539,24 @@ function ChatApp() {
         {messages.length === 0 ? (
           <WelcomeScreen onPromptSelect={handleSend} />
         ) : (
-          <ChatArea messages={messages} onRegenerate={handleRegenerate} onVariation={handleVariation} onOpen={setCanvasAsset} />
+          <ChatArea messages={messages} onRegenerate={handleRegenerate} onVariation={handleVariation} onOpen={setCanvasAsset} onCopyPrompt={(asset) => { navigator.clipboard.writeText(asset.prompt); addToast("Prompt copied", "success"); }} onFavorite={handleFavorite} onDelete={handleDeleteAsset} onRetry={() => {
+            const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+            if (lastUserMsg) handleSend(lastUserMsg.content);
+          }} />
         )}
         <ChatInput onSend={handleSend} isLoading={isLoading} />
       </main>
       <AssetWorkspace
         assets={allAssets}
         onOpen={setCanvasAsset}
-        onRegenerate={handleRegenerate}
-        onVariation={handleVariation}
+        onCompare={setCompareAssets}
         isOpen={assetsPanelOpen}
         onToggle={() => setAssetsPanelOpen(!assetsPanelOpen)}
       />
-      <CanvasModal asset={canvasAsset} onClose={() => setCanvasAsset(null)} onRegenerate={handleRegenerate} onVariation={handleVariation} />
+      <CanvasModal asset={canvasAsset} allAssets={allAssets} onClose={() => setCanvasAsset(null)} onRegenerate={handleRegenerate} onVariation={handleVariation} onCopyPrompt={(prompt) => { navigator.clipboard.writeText(prompt); addToast("Prompt copied to clipboard", "success"); }} />
+      {compareAssets && compareAssets.length >= 2 && (
+        <CompareModal assets={compareAssets} onClose={() => setCompareAssets(null)} onOpen={(a) => { setCompareAssets(null); setCanvasAsset(a); }} />
+      )}
     </div>
   );
 }

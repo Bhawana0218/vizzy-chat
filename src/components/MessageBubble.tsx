@@ -2,6 +2,7 @@
 
 import { useState, ReactNode } from "react";
 import { Message, GeneratedAsset, GenerationStage } from "@/lib/types";
+import AssetCard from "@/components/AssetCard";
 
 interface MessageBubbleProps {
   message: Message;
@@ -9,6 +10,10 @@ interface MessageBubbleProps {
   onVariation?: (asset: GeneratedAsset) => void;
   onOpen?: (asset: GeneratedAsset) => void;
   onCopy?: (text: string) => void;
+  onCopyPrompt?: (asset: GeneratedAsset) => void;
+  onFavorite?: (asset: GeneratedAsset) => void;
+  onDelete?: (asset: GeneratedAsset) => void;
+  onRetry?: () => void;
 }
 
 function StageIndicator({ stage }: { stage: GenerationStage }) {
@@ -74,40 +79,7 @@ function StreamingText({ text }: { text: string }) {
   );
 }
 
-function AssetCard({ asset, onOpen }: { asset: GeneratedAsset; onOpen?: (a: GeneratedAsset) => void }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <div
-      className="relative rounded-xl overflow-hidden border border-white/[0.06] bg-white/[0.02] cursor-pointer group animate-asset-in transition-all duration-300 hover:border-white/[0.12] hover:shadow-xl hover:shadow-black/20"
-      onClick={() => onOpen?.(asset)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <div className="aspect-square relative">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={asset.url} alt={asset.title} className="w-full h-full object-cover" />
-        <div className={`absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent transition-opacity duration-300 ${hovered ? "opacity-100" : "opacity-0"}`} />
-        {hovered && (
-          <div className="absolute bottom-2 left-2 right-2 flex items-center gap-1 animate-fade-in">
-            <button className="flex-1 py-1.5 rounded-lg bg-white/10 backdrop-blur-sm text-[11px] text-white font-medium hover:bg-white/20 transition-colors">Open</button>
-            <button className="py-1.5 px-2 rounded-lg bg-white/10 backdrop-blur-sm text-white hover:bg-white/20 transition-colors">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            </button>
-          </div>
-        )}
-        <div className="absolute top-2 right-2">
-          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-white/60 uppercase font-medium">{asset.type}</span>
-        </div>
-      </div>
-      <div className="px-3 py-2.5">
-        <p className="text-[12px] text-zinc-200 truncate font-medium">{asset.title}</p>
-        <p className="text-[10px] text-zinc-500 mt-0.5">{asset.width}&times;{asset.height}</p>
-      </div>
-    </div>
-  );
-}
-
-export default function MessageBubble({ message, onRegenerate, onVariation, onOpen, onCopy }: MessageBubbleProps) {
+export default function MessageBubble({ message, onRegenerate, onVariation, onOpen, onCopy, onCopyPrompt, onFavorite, onDelete, onRetry }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
 
@@ -129,7 +101,6 @@ export default function MessageBubble({ message, onRegenerate, onVariation, onOp
       )}
 
       <div className={`flex flex-col ${isUser ? "items-end max-w-[80%]" : "items-start max-w-[85%]"} min-w-0`}>
-        {/* User attachments */}
         {message.attachments && message.attachments.length > 0 && !message.isStreaming && (
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             {message.attachments.map((att) => (
@@ -141,7 +112,6 @@ export default function MessageBubble({ message, onRegenerate, onVariation, onOp
           </div>
         )}
 
-        {/* Voice data indicator */}
         {message.voiceData && (
           <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-xl bg-violet-500/10 border border-violet-500/15">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-violet-400">
@@ -151,7 +121,6 @@ export default function MessageBubble({ message, onRegenerate, onVariation, onOp
           </div>
         )}
 
-        {/* Text bubble */}
         <div
           className={`
             rounded-2xl px-4 py-3 text-[14px] leading-relaxed
@@ -170,28 +139,44 @@ export default function MessageBubble({ message, onRegenerate, onVariation, onOp
           )}
         </div>
 
-        {/* Stage indicator */}
         {message.stage && <StageIndicator stage={message.stage} />}
 
-        {/* Error + retry */}
         {message.error && (
           <div className="flex items-center gap-2 mt-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/15 animate-scale-in">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-red-400 shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <span className="text-[12px] text-red-300 flex-1">{message.error}</span>
-            <button className="text-[11px] text-red-400 hover:text-red-300 font-medium transition-colors">Retry</button>
+            <button onClick={onRetry} className="text-[11px] text-red-400 hover:text-red-300 font-medium transition-colors">Retry</button>
           </div>
         )}
 
-        {/* Asset grid */}
         {message.assets && message.assets.length > 0 && !message.isStreaming && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3 w-full">
-            {message.assets.map((asset) => (
-              <AssetCard key={asset.id} asset={asset} onOpen={onOpen} />
-            ))}
-          </div>
+          <>
+            <div className="flex flex-wrap gap-2 mt-3 w-full">
+              {message.assets.map((asset) => (
+                <AssetCard
+                  key={asset.id}
+                  asset={asset}
+                  onOpen={onOpen}
+                  onRegenerate={onRegenerate}
+                  onVariation={onVariation}
+                  onFavorite={onFavorite}
+                  onDelete={onDelete}
+                  onCopyPrompt={onCopyPrompt}
+                />
+              ))}
+            </div>
+
+            {(message.assets[0]?.enhancedPrompt || message.assets[0]?.metadata?.enhancedPrompt) && (
+              <div className="mt-2 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.04] max-w-full">
+                <span className="text-[9px] uppercase tracking-wider text-zinc-600 font-medium">Enhanced Prompt</span>
+                <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed line-clamp-2">
+                  {message.assets[0].enhancedPrompt || message.assets[0].metadata?.enhancedPrompt}
+                </p>
+              </div>
+            )}
+          </>
         )}
 
-        {/* Actions */}
         {!message.isStreaming && !isUser && (
           <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <button onClick={handleCopy} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-zinc-600 hover:text-zinc-300 hover:bg-white/[0.04] transition-colors">

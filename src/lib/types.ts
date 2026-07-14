@@ -40,14 +40,21 @@ export interface GeneratedAsset {
   url: string;
   title: string;
   prompt: string;
+  enhancedPrompt?: string;
+  variationName?: string;
   width: number;
   height: number;
   favorited?: boolean;
+  createdAt?: string;
   metadata?: {
     model?: string;
     seed?: number;
     style?: string;
     enhancedPrompt?: string;
+    variationName?: string;
+    gradient?: string;
+    aspectRatio?: string;
+    provider?: string;
   };
 }
 
@@ -57,6 +64,12 @@ export interface MessageAttachment {
   type: string;
   size: number;
   previewUrl: string;
+}
+
+export interface ReferenceImage {
+  name: string;
+  type: string;
+  dataUrl: string;
 }
 
 export interface VoiceData {
@@ -99,6 +112,7 @@ export interface Conversation {
   updatedAt: Date;
   pinned?: boolean;
   folderId?: string;
+  isArchived?: boolean;
   workspace: Workspace;
 }
 

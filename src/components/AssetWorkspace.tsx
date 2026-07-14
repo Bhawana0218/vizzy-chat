@@ -2,21 +2,23 @@
 
 import { useState, useMemo } from "react";
 import { GeneratedAsset } from "@/lib/types";
+import { downloadAllImages } from "@/lib/download";
 
 interface AssetWorkspaceProps {
   assets: GeneratedAsset[];
   onOpen: (asset: GeneratedAsset) => void;
-  onRegenerate: (asset: GeneratedAsset) => void;
-  onVariation: (asset: GeneratedAsset) => void;
+  onCompare?: (assets: GeneratedAsset[]) => void;
   isOpen: boolean;
   onToggle: () => void;
 }
 
 type FilterType = "all" | "image" | "video" | "poster" | "moodboard" | "storyboard";
 
-export default function AssetWorkspace({ assets, onOpen, onRegenerate, onVariation, isOpen, onToggle }: AssetWorkspaceProps) {
+export default function AssetWorkspace({ assets, onOpen, onCompare, isOpen, onToggle }: AssetWorkspaceProps) {
   const [filter, setFilter] = useState<FilterType>("all");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
 
   const filtered = useMemo(() => {
     if (filter === "all") return assets;
@@ -31,11 +33,16 @@ export default function AssetWorkspace({ assets, onOpen, onRegenerate, onVariati
     return c;
   }, [assets]);
 
-  const handleDownload = (asset: GeneratedAsset) => {
-    const link = document.createElement("a");
-    link.href = asset.url;
-    link.download = `${asset.title.replace(/\s+/g, "-").toLowerCase()}.png`;
-    link.click();
+  const handleBulkDownload = async () => {
+    setBulkDownloading(true);
+    setBulkProgress({ done: 0, total: assets.length });
+    await downloadAllImages(
+      assets.map((a) => ({ url: a.url, title: a.title })),
+      "png",
+      (done, total) => setBulkProgress({ done, total }),
+    );
+    setBulkDownloading(false);
+    setBulkProgress(null);
   };
 
   const filters: { key: FilterType; label: string }[] = [
@@ -127,31 +134,6 @@ export default function AssetWorkspace({ assets, onOpen, onRegenerate, onVariati
                 >
                   <div className="aspect-square relative">
                     <AssetPlaceholder asset={asset} />
-                    <div className="absolute bottom-0 left-0 right-0 p-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onRegenerate(asset); }}
-                          className="p-1 rounded-md bg-black/60 backdrop-blur-sm text-white/70 hover:text-white transition-colors"
-                          title="Regenerate"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onVariation(asset); }}
-                          className="p-1 rounded-md bg-black/60 backdrop-blur-sm text-white/70 hover:text-white transition-colors"
-                          title="Create variation"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22V8"/><path d="m21 3-9 9"/></svg>
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDownload(asset); }}
-                          className="p-1 rounded-md bg-black/60 backdrop-blur-sm text-white/70 hover:text-white transition-colors"
-                          title="Download"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        </button>
-                      </div>
-                    </div>
                     {hoveredId !== asset.id && (
                       <div className="absolute top-1.5 right-1.5 z-10">
                         <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-black/50 backdrop-blur-sm text-white/60 uppercase font-medium">
@@ -163,6 +145,9 @@ export default function AssetWorkspace({ assets, onOpen, onRegenerate, onVariati
                   <div className="px-2.5 py-2">
                     <p className="text-[11px] text-zinc-300 truncate font-medium">{asset.title}</p>
                     <p className="text-[10px] text-zinc-600 truncate mt-0.5">{asset.width}x{asset.height}</p>
+                    {asset.variationName && (
+                      <p className="text-[9px] text-violet-400/60 truncate mt-0.5">{asset.variationName}</p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -171,9 +156,32 @@ export default function AssetWorkspace({ assets, onOpen, onRegenerate, onVariati
         </div>
 
         {assets.length > 0 && (
-          <div className="px-4 py-3 border-t border-white/[0.06]">
-            <button className="w-full py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.06] border border-white/[0.06] text-[12px] text-zinc-400 hover:text-zinc-200 transition-all duration-200 font-medium">
-              Export All ({assets.length} assets)
+          <div className="px-3 py-3 border-t border-white/[0.06] space-y-2">
+            {assets.length >= 2 && onCompare && (
+              <button
+                onClick={() => onCompare(filtered.length >= 2 ? filtered : assets)}
+                className="w-full py-2 rounded-xl bg-violet-600/15 hover:bg-violet-600/25 border border-violet-500/20 text-[12px] text-violet-300 hover:text-violet-200 transition-all duration-200 font-medium flex items-center justify-center gap-1.5"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="3" width="8" height="18" rx="1"/><rect x="14" y="3" width="8" height="18" rx="1"/></svg>
+                Compare Side by Side
+              </button>
+            )}
+            <button
+              onClick={handleBulkDownload}
+              disabled={bulkDownloading}
+              className="w-full py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.06] border border-white/[0.06] text-[12px] text-zinc-400 hover:text-zinc-200 transition-all duration-200 font-medium flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {bulkDownloading ? (
+                <>
+                  <div className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin" />
+                  Downloading {bulkProgress ? `${bulkProgress.done}/${bulkProgress.total}` : "..."}
+                </>
+              ) : (
+                <>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download All ({assets.length} assets)
+                </>
+              )}
             </button>
           </div>
         )}
