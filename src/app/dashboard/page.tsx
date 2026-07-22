@@ -20,7 +20,7 @@ export default function DashboardPage() {
     if (!loading && !user) router.push("/");
   }, [user, loading, router]);
 
-  useEffect(() => {
+useEffect(() => {
     try {
       const userId = user?.id || user?.email;
       const safeId = userId ? userId.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase() : "";

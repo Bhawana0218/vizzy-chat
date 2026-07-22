@@ -295,44 +295,58 @@ export function detectWorkspace(text: string): "personal" | "business" {
 }
 
 export function getMockResponseForIntent(enhanced: EnhancedPrompt): string {
+  const keywords = enhanced.keywords.slice(0, 3).join(", ") || "your concept";
   const responses: Partial<Record<CreativeIntent, string[]>> = {
     "image-generation": [
-      `I've generated ${enhanced.format.count} stunning images with a ${enhanced.format.style} aesthetic. Each piece features cinematic lighting, deliberate color grading, and professional art direction that brings your vision to life.`,
-      `Here are ${enhanced.format.count} creative interpretations. I applied ${enhanced.format.style} styling with careful composition, premium lighting, and a distinctive color palette. Each variant explores a different creative angle.`,
+      `I explored ${keywords} through three distinct visual directions. Each features cinematic lighting, deliberate color grading, and professional art direction \u2014 ranging from bold and dramatic to soft and refined.`,
+      `Here are my interpretations of ${keywords}. I paired ${enhanced.format.style} aesthetics with careful composition and premium lighting. Each variant takes a different creative angle while staying cohesive.`,
+      `For ${keywords}, I crafted three unique compositions with ${enhanced.format.style} styling. Notice how each one plays with light, depth, and color to create a different emotional response.`,
     ],
     "poster-design": [
-      `I've designed ${enhanced.format.count} poster concepts with strong visual hierarchy and ${enhanced.format.style} typography. Each layout is optimized for the ${enhanced.format.aspectRatio} format, balancing readability with artistic impact and print-quality production.`,
+      `I designed ${enhanced.format.count} poster concepts for ${keywords}. Strong visual hierarchy meets ${enhanced.format.style} typography, optimized for the ${enhanced.format.aspectRatio} format. Each balances readability with artistic impact.`,
+      `Here are poster designs for ${keywords} \u2014 each with a different layout approach. One emphasizes bold headline space, another focuses on imagery, and the third blends both. All print-ready at ${enhanced.format.aspectRatio}.`,
     ],
     "product-ad": [
-      `Here are ${enhanced.format.count} premium product advertisement concepts with ${enhanced.format.style} aesthetics. Each features cinematic lighting, aspirational composition, and social media-optimized framing targeting different audience appeals.`,
+      `Here are ${enhanced.format.count} product ad concepts for ${keywords}. Each uses ${enhanced.format.style} aesthetics with cinematic lighting, aspirational composition, and social-media-optimized framing.`,
+      `I created ${enhanced.format.count} premium product shots for ${keywords}. Each targets a different audience appeal \u2014 one aspirational, one lifestyle-focused, one bold and direct.`,
     ],
     "campaign-design": [
-      `I've created ${enhanced.format.count} campaign visuals with a cohesive ${enhanced.format.style} direction. Each piece is designed to work across platforms while maintaining visual impact with strong brand positioning and scroll-stopping composition.`,
+      `I built ${enhanced.format.count} campaign visuals around ${keywords}. Each piece works across platforms while maintaining strong visual impact with ${enhanced.format.style} brand positioning.`,
+      `Your ${keywords} campaign gets three visual directions \u2014 each with scroll-stopping composition, platform-native formatting, and a cohesive ${enhanced.format.style} identity.`,
     ],
     "photo-transform": [
-      `I've transformed your reference into ${enhanced.format.count} new interpretations. Each applies a ${enhanced.format.style} artistic style while preserving the original composition's essence. The results blend familiar structure with a completely refreshed creative direction.`,
+      `I reimagined ${keywords} in ${enhanced.format.style} style. Each transformation preserves the original composition's essence while bringing a completely refreshed creative direction.`,
+      `Here's ${keywords} transformed with ${enhanced.format.style} artistry \u2014 from the texture of brushstrokes to the color temperature. Each version offers a different emotional interpretation.`,
     ],
     "story-narrative": [
-      `I've illustrated ${enhanced.format.count} key narrative moments. Each panel captures a story beat with ${enhanced.format.style} visual storytelling, cinematic framing, and emotionally engaging compositions that bring the narrative to life.`,
+      `I illustrated ${enhanced.format.count} key moments from ${keywords}. Each panel captures a story beat with cinematic framing, ${enhanced.format.style} visual storytelling, and emotionally engaging compositions.`,
+      `Here are the opening scenes for ${keywords} \u2014 each illustration brings a narrative moment to life with vibrant color, character-driven framing, and ${enhanced.format.style} mood.`,
     ],
     "vision-board": [
-      `Here's your vision board with ${enhanced.format.count} curated focus areas. Each tile represents a key aspiration with its own ${enhanced.format.style} color story and mood. The board creates a cohesive, aspirational visual representation of your goals.`,
+      `Your vision board for ${keywords} is ready \u2014 ${enhanced.format.count} curated tiles, each with its own ${enhanced.format.style} color story. Together they create a cohesive, aspirational representation of your goals.`,
+      `I assembled ${enhanced.format.count} focus areas for ${keywords}. Each tile tells part of the story with ${enhanced.format.style} aesthetics and intentional mood. Ask me to refine any tile.`,
     ],
     "dream-visualization": [
-      `I've visualized your dream as ${enhanced.format.count} ethereal scenes. The dreamlike quality uses ${enhanced.format.style} elements — soft edges, impossible geometry, and a palette that shifts between reality and fantasy.`,
+      `I visualized ${keywords} as ethereal scenes \u2014 soft edges, impossible geometry, and ${enhanced.format.style} color shifts between reality and fantasy. Each piece captures a different layer of the dream.`,
+      `Here's ${keywords} brought to life through ${enhanced.format.style} dream logic. The palette drifts between deep indigo and soft luminescence, creating an otherworldly atmosphere.`,
     ],
     "emotional-landscape": [
-      `I've created ${enhanced.format.count} abstract representations of your emotional landscape. Using ${enhanced.format.style} color psychology and compositional flow, each piece captures a different facet of inner experience.`,
+      `I created ${enhanced.format.count} abstract pieces representing ${keywords}. Using ${enhanced.format.style} color psychology and compositional flow, each captures a different facet of inner experience.`,
+      `For ${keywords}, I explored emotion through ${enhanced.format.style} visual language \u2014 deep tones for introspection, lighter hues for expansion. Each piece resonates with a different emotional frequency.`,
     ],
     "quote-poster": [
-      `Here are ${enhanced.format.count} quote poster designs. Each features ${enhanced.format.style} typography with carefully balanced layouts that make the words visually striking while maintaining readability and emotional impact.`,
+      `Here are ${enhanced.format.count} designs for ${keywords}. Each uses ${enhanced.format.style} typography with layouts that make the words visually striking while maintaining readability and emotional weight.`,
+      `I created ${enhanced.format.count} quote poster directions for ${keywords} \u2014 one clean and minimal, one bold and dramatic. Both are designed to look stunning as wall art or social content.`,
     ],
     "brand-artwork": [
-      `I've created ${enhanced.format.count} brand-aligned artworks. Each incorporates your ${enhanced.format.style} aesthetic while maintaining brand consistency. The designs balance creative expression with strategic brand communication.`,
+      `I created brand-aligned pieces for ${keywords}. Each incorporates ${enhanced.format.style} aesthetics while maintaining brand consistency \u2014 balancing creative expression with strategic communication.`,
+      `Here's ${keywords} as brand artwork \u2014 ${enhanced.format.count} directions that balance visual impact with ${enhanced.format.style} brand identity. Each feels distinctive yet cohesive.`,
     ],
     "general-creative": [
-      `I've brought your concept to life with ${enhanced.format.count} creative outputs. Each explores a different angle with ${enhanced.format.style} aesthetics, cinematic lighting, and professional-grade art direction.`,
-      `Here are ${enhanced.format.count} interpretations of your creative brief. I applied ${enhanced.format.style} styling with attention to composition, color harmony, and visual storytelling to create compelling, production-ready results.`,
+      `I explored ${keywords} through three creative directions. Each piece uses ${enhanced.format.style} aesthetics with cinematic lighting, deliberate color grading, and professional art direction.`,
+      `Here's my interpretation of ${keywords} \u2014 three unique takes with ${enhanced.format.style} styling, strong composition, and emotional depth. Each explores a different angle of your vision.`,
+      `For ${keywords}, I crafted three visuals with ${enhanced.format.style} flair. Notice how each one shifts in mood, from bold confidence to quiet elegance. Pick a favorite and I'll refine it.`,
+      `I brought ${keywords} to life with three distinct approaches. One leans into drama, one into simplicity, and one into something unexpected. All are ${enhanced.format.style} and production-ready.`,
     ],
   };
 

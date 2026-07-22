@@ -13,41 +13,50 @@ export interface AuthUser {
 export async function getAuthUser(): Promise<AuthUser> {
   let supabase;
   try {
-    supabase = await createClient();
+    supabase = await Promise.race([
+      createClient(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("supabase-timeout")), 3000)),
+    ]);
   } catch (err) {
     console.error("[getAuthUser] Failed to create Supabase client:", err);
     throw new Error("UNAUTHORIZED");
   }
 
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const { data: { user }, error } = await Promise.race([
+    supabase.auth.getUser(),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("supabase-timeout")), 3000)),
+  ]);
 
   if (error || !user) {
     throw new Error("UNAUTHORIZED");
   }
 
   try {
-    const dbUser = await prisma.user.upsert({
-      where: { providerId: user.id },
-      create: {
-        email: user.email!,
-        name: user.user_metadata?.full_name || user.user_metadata?.name,
-        avatarUrl: user.user_metadata?.avatar_url,
-        provider: user.app_metadata?.provider || "google",
-        providerId: user.id,
-      },
-      update: {
-        name: user.user_metadata?.full_name || user.user_metadata?.name,
-        avatarUrl: user.user_metadata?.avatar_url,
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        avatarUrl: true,
-        credits: true,
-        plan: true,
-      },
-    });
+    const dbUser = await Promise.race([
+      prisma.user.upsert({
+        where: { providerId: user.id },
+        create: {
+          email: user.email!,
+          name: user.user_metadata?.full_name || user.user_metadata?.name,
+          avatarUrl: user.user_metadata?.avatar_url,
+          provider: user.app_metadata?.provider || "google",
+          providerId: user.id,
+        },
+        update: {
+          name: user.user_metadata?.full_name || user.user_metadata?.name,
+          avatarUrl: user.user_metadata?.avatar_url,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          avatarUrl: true,
+          credits: true,
+          plan: true,
+        },
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("db-timeout")), 3000)),
+    ]);
     return dbUser;
   } catch (dbErr: unknown) {
     const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);

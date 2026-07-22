@@ -170,6 +170,21 @@ const MOCK_RESPONSES: Record<string, MockResponse> = {
   },
 };
 
+function extractSubject(text: string): string {
+  const cleaned = text
+    .toLowerCase()
+    .replace(/^(create|generate|make|design|draw|illustrate|show|give|i want|i need|can you|please|help me)\s*/i, "")
+    .replace(/\s*(for me|for my|for|please)\s*/i, " ")
+    .replace(/[^\w\s]/g, "")
+    .trim();
+  const words = cleaned.split(/\s+/).filter((w) => w.length > 2).slice(0, 5);
+  return words.join(" ") || "your vision";
+}
+
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 export function getMockResponse(userMessage: string): MockResponse {
   const lower = userMessage.toLowerCase();
 
@@ -190,8 +205,21 @@ export function getMockResponse(userMessage: string): MockResponse {
   if (lower.includes("brand") || lower.includes("identity")) return MOCK_RESPONSES["brand"];
   if (lower.includes("photo") || lower.includes("transform") || lower.includes("restyle") || lower.includes("turn")) return MOCK_RESPONSES["renaissance"];
 
+  const subject = extractSubject(userMessage);
+
+  const genericResponses = [
+    `I've brought "${subject}" to life with a fresh creative direction. Each version explores a different mood and composition while staying true to your concept. The results balance visual impact with professional polish.`,
+    `Here's my take on "${subject}" \u2014 I explored three distinct angles: one bold and eye-catching, one refined and elegant, and one with an unexpected twist. Let me know which direction resonates.`,
+    `I explored "${subject}" through multiple creative lenses. Each piece has its own personality \u2014 from dramatic lighting to soft, approachable tones. Which feeling speaks to you?`,
+    `Working on "${subject}" was a blast. I played with composition, color, and mood to create something that stands out. These are designed to grab attention while feeling polished and intentional.`,
+    `Your vision for "${subject}" inspired some bold choices. I leaned into strong visual hierarchy, intentional negative space, and a color palette that pops. Want me to push further in any direction?`,
+    `I took "${subject}" in a direction that balances creativity with clarity. Each version tells a slightly different story through its visual language. Pick a favorite and I'll refine it further.`,
+    `Here are three fresh interpretations of "${subject}" \u2014 each with a unique composition and mood. I focused on making them visually striking while keeping them versatile enough for any platform.`,
+    `I channeled "${subject}" into visuals that feel both modern and timeless. The interplay of light, texture, and color creates depth across each variation. Which one catches your eye?`,
+  ];
+
   return {
-    text: `I've brought your concept to life with ${3} creative interpretations. Each explores a different angle of your vision with modern aesthetics and professional-grade composition. I applied careful attention to color harmony, visual hierarchy, and emotional impact. Would you like me to refine a specific direction, adjust the style, or create additional variations?`,
+    text: pickRandom(genericResponses),
     assets: [{ category: "generic-creative", count: 3 }],
   };
 }

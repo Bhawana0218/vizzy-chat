@@ -42,7 +42,10 @@ export async function POST(request: NextRequest) {
 
     let user;
     try {
-      user = await getAuthUser();
+      user = await Promise.race([
+        getAuthUser(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
+      ]);
     } catch {
       logger.warn("Auth failed, using mock user", { requestId });
       user = { id: "mock-user", email: "mock@vizzy.app", name: "Mock User", avatarUrl: null, credits: 1000, plan: "creator" };
@@ -62,10 +65,13 @@ export async function POST(request: NextRequest) {
 
     let conversationId: string | null = validated.conversationId || null;
 
-    if (conversationId) {
+    const isMockUser = user.id === "mock-user";
+    const isRealConversation = !isMockUser && conversationId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId);
+
+    if (isRealConversation) {
       try {
         const conv = await prisma.conversation.findFirst({
-          where: { id: conversationId, userId: user.id },
+          where: { id: conversationId!, userId: user.id },
         });
         if (!conv) {
           conversationId = null;
@@ -73,9 +79,11 @@ export async function POST(request: NextRequest) {
       } catch {
         conversationId = null;
       }
+    } else if (conversationId) {
+      conversationId = null;
     }
 
-    if (!conversationId) {
+    if (!conversationId && !isMockUser) {
       try {
         const conv = await prisma.conversation.create({
           data: {
@@ -89,7 +97,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (conversationId && !conversationId.startsWith("mock-")) {
+    if (!conversationId) {
+      conversationId = `mock-conv-${Date.now()}`;
+    }
+
+    if (conversationId && !conversationId.startsWith("mock-") && !isMockUser) {
       try {
         await prisma.message.create({
           data: {
@@ -105,7 +117,7 @@ export async function POST(request: NextRequest) {
     }
 
     let history: { role: string; content: string }[] = [];
-    if (conversationId && !conversationId.startsWith("mock-")) {
+    if (conversationId && !conversationId.startsWith("mock-") && !isMockUser) {
       try {
         const msgs = await prisma.message.findMany({
           where: { conversationId },
@@ -136,7 +148,7 @@ export async function POST(request: NextRequest) {
             );
           }
 
-          if (conversationId && !conversationId.startsWith("mock-")) {
+          if (conversationId && !conversationId.startsWith("mock-") && !isMockUser) {
             try {
               await prisma.message.create({
                 data: {

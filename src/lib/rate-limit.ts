@@ -13,6 +13,15 @@ const DEFAULT_CONFIGS: Record<string, RateLimitConfig> = {
   auth: { windowMs: 15 * 60 * 1000, maxRequests: 20 },
 };
 
+const DB_TIMEOUT_MS = 2000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("db-timeout")), ms)),
+  ]);
+}
+
 export async function checkRateLimit(
   identifier: string,
   endpoint: string,
@@ -25,37 +34,42 @@ export async function checkRateLimit(
 
   const windowStart = new Date(Date.now() - windowMs);
 
-  // Count requests in current window
-  const result = await prisma.rateLimit.aggregate({
-    where: {
-      identifier,
-      endpoint,
-      windowStart: { gte: windowStart },
-    },
-    _count: true,
-  });
-
-  const count = result._count;
-
-  // Cleanup old entries (1% chance)
-  if (Math.random() < 0.01) {
-    prisma.rateLimit.deleteMany({
-      where: {
-        windowStart: { lt: windowStart },
-      },
-    }).catch(() => {});
+  let count = 0;
+  try {
+    const result = await withTimeout(
+      prisma.rateLimit.aggregate({
+        where: {
+          identifier,
+          endpoint,
+          windowStart: { gte: windowStart },
+        },
+        _count: true,
+      }),
+      DB_TIMEOUT_MS
+    );
+    count = result._count;
+  } catch {
+    // DB unreachable — allow all requests
+    return {
+      allowed: true,
+      remaining: maxRequests,
+      resetAt: new Date(Date.now() + windowMs),
+    };
   }
 
   const allowed = count < maxRequests;
 
   if (allowed) {
-    await prisma.rateLimit.create({
-      data: {
-        identifier,
-        endpoint,
-        windowStart: new Date(),
-      },
-    });
+    withTimeout(
+      prisma.rateLimit.create({
+        data: {
+          identifier,
+          endpoint,
+          windowStart: new Date(),
+        },
+      }),
+      DB_TIMEOUT_MS
+    ).catch(() => {});
   }
 
   return {

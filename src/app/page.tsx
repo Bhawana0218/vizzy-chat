@@ -127,13 +127,13 @@ function mockGenerationPipeline(
 
     stageIdx++;
     if (stageIdx < stages.length) {
-      setTimeout(advanceStage, 400 + Math.random() * 300);
+      setTimeout(advanceStage, 120 + Math.random() * 80);
     } else {
       streamFinalResponse(responseText, assets, enhanced.enhanced, convId, assistantId, updateConversation, setIsLoading, addToast);
     }
   };
 
-  setTimeout(advanceStage, 200);
+  setTimeout(advanceStage, 80);
 }
 
 function streamFinalResponse(
@@ -173,7 +173,7 @@ function streamFinalResponse(
       ),
       updatedAt: new Date(),
     }));
-  }, 20);
+  }, 10);
 }
 
 function ChatApp() {
@@ -291,7 +291,6 @@ function ChatApp() {
             messages: conv.messages.map((m) => m.id === assistantId ? { ...m, content: m.content || "Here's what I created for you.", stage: "completed", isStreaming: false } : m),
             updatedAt: new Date(),
           }));
-          setIsLoading(false);
 
           if (imageIntent.shouldGenerate) {
             const referenceImages = (attachs || [])
@@ -335,7 +334,11 @@ function ChatApp() {
             }).catch((err) => {
               console.error("Image generation failed:", err);
               addToast("Image generation failed — try again", "error");
+            }).finally(() => {
+              setIsLoading(false);
             });
+          } else {
+            setIsLoading(false);
           }
         },
         onError: (error) => {
@@ -347,7 +350,6 @@ function ChatApp() {
             ),
             updatedAt: new Date(),
           }));
-          setIsLoading(false);
           addToast(error || "AI service unavailable, generating locally...", "info");
           mockGenerationPipeline(text, (attachs?.length || 0) > 0, convId!, assistantId, updateConversation, setIsLoading, addToast);
         },
@@ -364,7 +366,6 @@ function ChatApp() {
             ),
             updatedAt: new Date(),
           }));
-          setIsLoading(false);
           addToast("Request timed out, generating locally...", "info");
           mockGenerationPipeline(text, (attachs?.length || 0) > 0, convId!, assistantId, updateConversation, setIsLoading, addToast);
         }
